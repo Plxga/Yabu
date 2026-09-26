@@ -1,657 +1,397 @@
--- Yabujin Visuals + Skin Changer + Stats Display
--- Solo para TU propio juego (Studio / place propio).
--- Usage:
---   loadstring(game:HttpGet("https://raw.githubusercontent.com/Plxga/Yabu/main/yabujin_visuals.luau"))()
--- Toggle: Right Shift
-
-local SOURCES = {}
-
-SOURCES["Config"] = [=[
-local Config = {
-	ToggleKey = Enum.KeyCode.RightShift,
-	PanelSize = UDim2.fromOffset(400, 520),
-	OpenSpeed = 0.22,
-
-	Defaults = {
-		FOV = 70,
-		CrosshairVisible = true,
-		CrosshairSize = 6,
-		CrosshairGap = 4,
-		CrosshairThickness = 2,
-		CrosshairColor = Color3.fromRGB(220, 220, 235),
-		UIScale = 1,
-		CameraShake = true,
-		Bloom = false,
-		Vignette = true,
-		AccentColor = Color3.fromRGB(180, 90, 255),
-		ShowFPS = true,
-
-		-- Stats (visual only)
-		Level = 1,
-		Rank = "Bronze I",
-		Wins = 0,
-		Streak = 0,
-		Elo = 1000,
-		ShowStatsHUD = true,
-
-		-- Skin
-		SelectedSkin = "Default",
-		SelectedWeapon = "Assault Rifle",
-	},
-
-	Limits = {
-		FOV = { Min = 50, Max = 120 },
-		CrosshairSize = { Min = 2, Max = 24 },
-		CrosshairGap = { Min = 0, Max = 20 },
-		CrosshairThickness = { Min = 1, Max = 6 },
-		UIScale = { Min = 0.7, Max = 1.4 },
-		Level = { Min = 1, Max = 999 },
-		Wins = { Min = 0, Max = 99999 },
-		Streak = { Min = 0, Max = 999 },
-		Elo = { Min = 0, Max = 5000 },
-	},
-
-	-- Skins de ejemplo (reemplaza con tus assets reales)
-	Skins = {
-		"Default",
-		"Carbon",
-		"Gold",
-		"Neon Violet",
-		"Crimson",
-		"Ice",
-		"Obsidian",
-		"Sakura",
-		"Void",
-		"Yabujin",
-	},
-
-	Weapons = {
-		"Assault Rifle",
-		"Handgun",
-		"Shotgun",
-		"Sniper",
-		"SMG",
-		"Melee",
-	},
-
-	Ranks = {
-		"Bronze I", "Bronze II", "Bronze III",
-		"Silver I", "Silver II", "Silver III",
-		"Gold I", "Gold II", "Gold III",
-		"Platinum I", "Platinum II", "Platinum III",
-		"Diamond I", "Diamond II", "Diamond III",
-		"Master", "Grandmaster", "Champion",
-	},
-}
-
-return Config
-]=]
-
-SOURCES["Theme"] = [=[
-local Theme = {
-	Background   = Color3.fromRGB(10, 10, 14),
-	Panel        = Color3.fromRGB(16, 16, 22),
-	Stroke       = Color3.fromRGB(38, 38, 52),
-	Text         = Color3.fromRGB(235, 235, 245),
-	TextDim      = Color3.fromRGB(130, 130, 150),
-	Accent       = Color3.fromRGB(180, 90, 255),
-	AccentSoft   = Color3.fromRGB(110, 55, 170),
-	Danger       = Color3.fromRGB(220, 70, 95),
-	Success      = Color3.fromRGB(80, 200, 140),
-	SliderTrack  = Color3.fromRGB(30, 30, 42),
-	SliderFill   = Color3.fromRGB(180, 90, 255),
-
-	Font     = Enum.Font.GothamMedium,
-	FontBold = Enum.Font.GothamBold,
-	Corner   = UDim.new(0, 6),
-}
-
-return Theme
-]=]
-
-SOURCES["SettingsStore"] = [=[
-local Config = require("Config")
-
-local SettingsStore = {}
-SettingsStore.__index = SettingsStore
-
-function SettingsStore.new()
-	local self = setmetatable({ Data = {} }, SettingsStore)
-	for k, v in pairs(Config.Defaults) do
-		self.Data[k] = v
-	end
-	return self
-end
-
-function SettingsStore:Get(key) return self.Data[key] end
-function SettingsStore:Set(key, value) self.Data[key] = value end
-
-function SettingsStore:GetAll()
-	local t = {}
-	for k, v in pairs(self.Data) do t[k] = v end
-	return t
-end
-
-function SettingsStore:Reset()
-	for k, v in pairs(Config.Defaults) do
-		self.Data[k] = v
-	end
-end
-
-return SettingsStore
-]=]
-
-SOURCES["SkinChanger"] = [=[
--- SkinChanger: sistema local de skins para TU juego.
--- Reemplaza colores / atributos del viewmodel o character.
--- No toca juegos de terceros.
+-- Yabujin Visuals (fixed)
+-- loadstring(game:HttpGet("https://raw.githubusercontent.com/Plxga/Yabu/main/yabujin_visuals.luau"))()
+-- Toggle: RightShift  |  also opens automatically on load
 
 local Players = game:GetService("Players")
-local Config = require("Config")
-
-local SkinChanger = {}
-SkinChanger.__index = SkinChanger
-
-local SKIN_COLORS = {
-	["Default"]     = Color3.fromRGB(180, 180, 190),
-	["Carbon"]      = Color3.fromRGB(40, 40, 45),
-	["Gold"]        = Color3.fromRGB(255, 200, 60),
-	["Neon Violet"] = Color3.fromRGB(180, 70, 255),
-	["Crimson"]     = Color3.fromRGB(200, 40, 60),
-	["Ice"]         = Color3.fromRGB(140, 210, 255),
-	["Obsidian"]    = Color3.fromRGB(20, 20, 28),
-	["Sakura"]      = Color3.fromRGB(255, 160, 200),
-	["Void"]        = Color3.fromRGB(60, 20, 90),
-	["Yabujin"]     = Color3.fromRGB(160, 80, 255),
-}
-
-function SkinChanger.new(settings)
-	return setmetatable({ Settings = settings }, SkinChanger)
-end
-
-function SkinChanger:Apply(skinName, weaponName)
-	skinName = skinName or self.Settings:Get("SelectedSkin") or "Default"
-	weaponName = weaponName or self.Settings:Get("SelectedWeapon") or "Assault Rifle"
-	self.Settings:Set("SelectedSkin", skinName)
-	self.Settings:Set("SelectedWeapon", weaponName)
-
-	local color = SKIN_COLORS[skinName] or SKIN_COLORS["Default"]
-	local player = Players.LocalPlayer
-	local char = player.Character
-	if not char then return end
-
-	-- Aplica color a partes del personaje / herramientas locales
-	for _, inst in ipairs(char:GetDescendants()) do
-		if inst:IsA("BasePart") and (inst.Name:find("Handle") or inst.Name:find("Weapon") or inst.Parent:IsA("Tool")) then
-			inst.Color = color
-		end
-	end
-
-	-- Si tienes un ViewModel en camera, también lo colorea
-	local cam = workspace.CurrentCamera
-	if cam then
-		for _, inst in ipairs(cam:GetDescendants()) do
-			if inst:IsA("BasePart") then
-				inst.Color = color
-			end
-		end
-	end
-
-	print("[SkinChanger] Applied", skinName, "on", weaponName)
-end
-
-function SkinChanger:GetSkinList()
-	return Config.Skins
-end
-
-function SkinChanger:GetWeaponList()
-	return Config.Weapons
-end
-
-return SkinChanger
-]=]
-
-SOURCES["StatsDisplay"] = [=[
--- StatsDisplay: HUD local de nivel / rango / wins / streak / Elo.
--- Solo visual. No modifica DataStore ni servidor.
-
-local Players = game:GetService("Players")
-local Theme = require("Theme")
-
-local StatsDisplay = {}
-StatsDisplay.__index = StatsDisplay
-
-function StatsDisplay.new(settings)
-	local self = setmetatable({
-		Settings = settings,
-		Gui = nil,
-		Labels = {},
-	}, StatsDisplay)
-	self:_Build()
-	return self
-end
-
-function StatsDisplay:_Build()
-	local pg = Players.LocalPlayer:WaitForChild("PlayerGui")
-	local old = pg:FindFirstChild("YabujinStatsHUD")
-	if old then old:Destroy() end
-
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "YabujinStatsHUD"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.Parent = pg
-	self.Gui = gui
-
-	local frame = Instance.new("Frame")
-	frame.Name = "StatsFrame"
-	frame.Size = UDim2.fromOffset(200, 110)
-	frame.Position = UDim2.new(0, 16, 0, 60)
-	frame.BackgroundColor3 = Theme.Panel
-	frame.BackgroundTransparency = 0.15
-	frame.BorderSizePixel = 0
-	frame.Parent = gui
-	Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Theme.Stroke
-	stroke.Thickness = 1
-	stroke.Parent = frame
-
-	local function mk(y, name)
-		local l = Instance.new("TextLabel")
-		l.Size = UDim2.new(1, -16, 0, 18)
-		l.Position = UDim2.fromOffset(8, y)
-		l.BackgroundTransparency = 1
-		l.Font = Theme.Font
-		l.TextSize = 13
-		l.TextColor3 = Theme.Text
-		l.TextXAlignment = Enum.TextXAlignment.Left
-		l.Text = name
-		l.Parent = frame
-		return l
-	end
-
-	self.Labels.Level  = mk(8,  "LVL  1")
-	self.Labels.Rank   = mk(28, "RANK  Bronze I")
-	self.Labels.Wins   = mk(48, "WINS  0")
-	self.Labels.Streak = mk(68, "STREAK  0")
-	self.Labels.Elo    = mk(88, "ELO  1000")
-
-	self.Frame = frame
-	self:Refresh()
-end
-
-function StatsDisplay:Refresh()
-	local s = self.Settings
-	if self.Labels.Level  then self.Labels.Level.Text  = "LVL  " .. tostring(s:Get("Level")) end
-	if self.Labels.Rank   then self.Labels.Rank.Text   = "RANK  " .. tostring(s:Get("Rank")) end
-	if self.Labels.Wins   then self.Labels.Wins.Text   = "WINS  " .. tostring(s:Get("Wins")) end
-	if self.Labels.Streak then self.Labels.Streak.Text = "STREAK  " .. tostring(s:Get("Streak")) end
-	if self.Labels.Elo    then self.Labels.Elo.Text    = "ELO  " .. tostring(s:Get("Elo")) end
-	if self.Frame then
-		self.Frame.Visible = s:Get("ShowStatsHUD") == true
-	end
-end
-
-function StatsDisplay:SetVisible(v)
-	if self.Frame then self.Frame.Visible = v end
-end
-
-return StatsDisplay
-]=]
-
-SOURCES["UI"] = [=[
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
 
-local Config = require("Config")
-local Theme = require("Theme")
+local player = Players.LocalPlayer or Players.PlayerAdded:Wait()
+local playerGui = player:WaitForChild("PlayerGui")
 
-local UI = {}
-UI.__index = UI
+-- ── Settings ──
+local settings = {
+	FOV = 70,
+	CrosshairVisible = true,
+	CrosshairSize = 6,
+	CrosshairGap = 4,
+	CrosshairThickness = 2,
+	Bloom = false,
+	Vignette = true,
+	ShowFPS = true,
+	ShowStatsHUD = true,
+	Level = 12,
+	Rank = "Gold II",
+	Wins = 48,
+	Streak = 3,
+	Elo = 1340,
+	SelectedSkin = "Neon Violet",
+	SelectedWeapon = "Assault Rifle",
+}
 
-local function corner(parent, radius)
+local SKINS = { "Default", "Carbon", "Gold", "Neon Violet", "Crimson", "Ice", "Obsidian", "Sakura", "Void", "Yabujin" }
+local WEAPONS = { "Assault Rifle", "Handgun", "Shotgun", "Sniper", "SMG", "Melee" }
+local RANKS = {
+	"Bronze I","Bronze II","Bronze III",
+	"Silver I","Silver II","Silver III",
+	"Gold I","Gold II","Gold III",
+	"Platinum I","Platinum II","Platinum III",
+	"Diamond I","Diamond II","Diamond III",
+	"Master","Grandmaster","Champion",
+}
+local SKIN_COLORS = {
+	["Default"] = Color3.fromRGB(180,180,190),
+	["Carbon"] = Color3.fromRGB(40,40,45),
+	["Gold"] = Color3.fromRGB(255,200,60),
+	["Neon Violet"] = Color3.fromRGB(180,70,255),
+	["Crimson"] = Color3.fromRGB(200,40,60),
+	["Ice"] = Color3.fromRGB(140,210,255),
+	["Obsidian"] = Color3.fromRGB(20,20,28),
+	["Sakura"] = Color3.fromRGB(255,160,200),
+	["Void"] = Color3.fromRGB(60,20,90),
+	["Yabujin"] = Color3.fromRGB(160,80,255),
+}
+
+local Theme = {
+	Bg = Color3.fromRGB(10,10,14),
+	Panel = Color3.fromRGB(16,16,22),
+	Stroke = Color3.fromRGB(40,40,55),
+	Text = Color3.fromRGB(235,235,245),
+	Dim = Color3.fromRGB(130,130,150),
+	Accent = Color3.fromRGB(180,90,255),
+	AccentSoft = Color3.fromRGB(110,55,170),
+	Track = Color3.fromRGB(30,30,42),
+}
+
+-- ── helpers ──
+local function corner(p, r)
 	local c = Instance.new("UICorner")
-	c.CornerRadius = radius or Theme.Corner
-	c.Parent = parent
-	return c
+	c.CornerRadius = UDim.new(0, r or 6)
+	c.Parent = p
 end
-
-local function stroke(parent, color, thickness)
+local function stroke(p, col, th)
 	local s = Instance.new("UIStroke")
-	s.Color = color or Theme.Stroke
-	s.Thickness = thickness or 1
-	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	s.Parent = parent
-	return s
+	s.Color = col or Theme.Stroke
+	s.Thickness = th or 1
+	s.Parent = p
 end
 
-local function pad(parent, t, b, l, r)
-	local p = Instance.new("UIPadding")
-	p.PaddingTop = UDim.new(0, t or 8)
-	p.PaddingBottom = UDim.new(0, b or 8)
-	p.PaddingLeft = UDim.new(0, l or 10)
-	p.PaddingRight = UDim.new(0, r or 10)
-	p.Parent = parent
-	return p
-end
-
-function UI.new(settings, onChange, skinChanger, statsDisplay)
-	local self = setmetatable({
-		Settings = settings,
-		OnChange = onChange,
-		SkinChanger = skinChanger,
-		StatsDisplay = statsDisplay,
-		Open = false,
-		Gui = nil,
-		Panel = nil,
-		Rows = {},
-	}, UI)
-	self:_Build()
-	return self
-end
-
-function UI:_Build()
-	local pg = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
-	local old = pg:FindFirstChild("YabujinVisuals")
+-- ── clean old ──
+for _, name in ipairs({ "YabujinVisuals", "YabujinStatsHUD" }) do
+	local old = playerGui:FindFirstChild(name)
 	if old then old:Destroy() end
-
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "YabujinVisuals"
-	gui.ResetOnSpawn = false
-	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	gui.IgnoreGuiInset = true
-	gui.Parent = pg
-	self.Gui = gui
-
-	-- Crosshair
-	local cross = Instance.new("Frame")
-	cross.Name = "Crosshair"
-	cross.AnchorPoint = Vector2.new(0.5, 0.5)
-	cross.Position = UDim2.fromScale(0.5, 0.5)
-	cross.BackgroundTransparency = 1
-	cross.Size = UDim2.fromOffset(40, 40)
-	cross.Parent = gui
-	self.Crosshair = cross
-	self:_RebuildCrosshair()
-
-	-- FPS
-	local fps = Instance.new("TextLabel")
-	fps.Name = "FPS"
-	fps.Size = UDim2.fromOffset(80, 18)
-	fps.Position = UDim2.new(1, -90, 0, 8)
-	fps.BackgroundTransparency = 1
-	fps.Font = Theme.Font
-	fps.TextSize = 12
-	fps.TextColor3 = Theme.TextDim
-	fps.TextXAlignment = Enum.TextXAlignment.Right
-	fps.Text = ""
-	fps.Parent = gui
-	self.FPSLabel = fps
-
-	-- Panel
-	local panel = Instance.new("Frame")
-	panel.Name = "Panel"
-	panel.AnchorPoint = Vector2.new(1, 0.5)
-	panel.Position = UDim2.new(1, 20, 0.5, 0)
-	panel.Size = Config.PanelSize
-	panel.BackgroundColor3 = Theme.Panel
-	panel.BorderSizePixel = 0
-	panel.Parent = gui
-	corner(panel, UDim.new(0, 8))
-	stroke(panel, Theme.Stroke, 1)
-	self.Panel = panel
-
-	-- Header
-	local header = Instance.new("Frame")
-	header.Size = UDim2.new(1, 0, 0, 42)
-	header.BackgroundColor3 = Theme.Background
-	header.BorderSizePixel = 0
-	header.Parent = panel
-	corner(header, UDim.new(0, 8))
-
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, -50, 1, 0)
-	title.Position = UDim2.fromOffset(14, 0)
-	title.BackgroundTransparency = 1
-	title.Font = Theme.FontBold
-	title.TextSize = 15
-	title.TextColor3 = Theme.Text
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.Text = "YABUJIN  ·  VISUALS"
-	title.Parent = header
-
-	local closeBtn = Instance.new("TextButton")
-	closeBtn.Size = UDim2.fromOffset(28, 28)
-	closeBtn.Position = UDim2.new(1, -34, 0.5, -14)
-	closeBtn.BackgroundColor3 = Theme.Background
-	closeBtn.Text = "×"
-	closeBtn.Font = Theme.FontBold
-	closeBtn.TextSize = 18
-	closeBtn.TextColor3 = Theme.TextDim
-	closeBtn.BorderSizePixel = 0
-	closeBtn.Parent = header
-	corner(closeBtn, UDim.new(0, 4))
-	closeBtn.MouseButton1Click:Connect(function() self:SetOpen(false) end)
-
-	-- Scroll
-	local scroll = Instance.new("ScrollingFrame")
-	scroll.Name = "Content"
-	scroll.Size = UDim2.new(1, 0, 1, -50)
-	scroll.Position = UDim2.fromOffset(0, 46)
-	scroll.BackgroundTransparency = 1
-	scroll.BorderSizePixel = 0
-	scroll.ScrollBarThickness = 3
-	scroll.ScrollBarImageColor3 = Theme.AccentSoft
-	scroll.CanvasSize = UDim2.fromOffset(0, 0)
-	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	scroll.Parent = panel
-	pad(scroll, 4, 12, 12, 12)
-
-	local list = Instance.new("UIListLayout")
-	list.Padding = UDim.new(0, 8)
-	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.Parent = scroll
-	self.Content = scroll
-
-	-- CAMERA
-	self:_AddSection("CAMERA")
-	self:_AddSlider("FOV", "FOV", Config.Limits.FOV.Min, Config.Limits.FOV.Max, 1)
-	self:_AddToggle("CameraShake", "Camera Shake")
-
-	-- CROSSHAIR
-	self:_AddSection("CROSSHAIR")
-	self:_AddToggle("CrosshairVisible", "Visible")
-	self:_AddSlider("CrosshairSize", "Size", Config.Limits.CrosshairSize.Min, Config.Limits.CrosshairSize.Max, 1)
-	self:_AddSlider("CrosshairGap", "Gap", Config.Limits.CrosshairGap.Min, Config.Limits.CrosshairGap.Max, 1)
-	self:_AddSlider("CrosshairThickness", "Thickness", Config.Limits.CrosshairThickness.Min, Config.Limits.CrosshairThickness.Max, 1)
-
-	-- POST FX
-	self:_AddSection("POST FX")
-	self:_AddToggle("Bloom", "Bloom")
-	self:_AddToggle("Vignette", "Vignette")
-
-	-- SKIN CHANGER
-	self:_AddSection("SKIN CHANGER")
-	self:_AddDropdown("SelectedWeapon", "Weapon", Config.Weapons)
-	self:_AddDropdown("SelectedSkin", "Skin", Config.Skins)
-	self:_AddButton("Apply Skin", function()
-		if self.SkinChanger then
-			self.SkinChanger:Apply(self.Settings:Get("SelectedSkin"), self.Settings:Get("SelectedWeapon"))
-		end
-	end)
-
-	-- STATS (visual)
-	self:_AddSection("STATS DISPLAY")
-	self:_AddToggle("ShowStatsHUD", "Show Stats HUD")
-	self:_AddSlider("Level", "Level", Config.Limits.Level.Min, Config.Limits.Level.Max, 1)
-	self:_AddDropdown("Rank", "Rank", Config.Ranks)
-	self:_AddSlider("Wins", "Wins", Config.Limits.Wins.Min, Config.Limits.Wins.Max, 1)
-	self:_AddSlider("Streak", "Streak", Config.Limits.Streak.Min, Config.Limits.Streak.Max, 1)
-	self:_AddSlider("Elo", "Elo", Config.Limits.Elo.Min, Config.Limits.Elo.Max, 10)
-
-	-- INTERFACE
-	self:_AddSection("INTERFACE")
-	self:_AddSlider("UIScale", "UI Scale", Config.Limits.UIScale.Min, Config.Limits.UIScale.Max, 0.05)
-	self:_AddToggle("ShowFPS", "Show FPS")
-
-	self:_AddSection("")
-	self:_AddButton("Reset to Defaults", function()
-		self.Settings:Reset()
-		self:RefreshAll()
-		if self.OnChange then self.OnChange("Reset") end
-	end)
 end
 
-function UI:_AddSection(name)
-	local f = Instance.new("Frame")
-	f.Size = UDim2.new(1, 0, 0, name == "" and 4 or 22)
-	f.BackgroundTransparency = 1
-	f.Parent = self.Content
-	if name ~= "" then
-		local l = Instance.new("TextLabel")
-		l.Size = UDim2.new(1, 0, 1, 0)
-		l.BackgroundTransparency = 1
-		l.Font = Theme.FontBold
-		l.TextSize = 11
-		l.TextColor3 = Theme.Accent
-		l.TextXAlignment = Enum.TextXAlignment.Left
-		l.Text = name
-		l.Parent = f
+-- ── Stats HUD ──
+local statsGui = Instance.new("ScreenGui")
+statsGui.Name = "YabujinStatsHUD"
+statsGui.ResetOnSpawn = false
+statsGui.IgnoreGuiInset = true
+statsGui.Parent = playerGui
+
+local statsFrame = Instance.new("Frame")
+statsFrame.Size = UDim2.fromOffset(190, 112)
+statsFrame.Position = UDim2.fromOffset(14, 54)
+statsFrame.BackgroundColor3 = Theme.Panel
+statsFrame.BackgroundTransparency = 0.12
+statsFrame.BorderSizePixel = 0
+statsFrame.Parent = statsGui
+corner(statsFrame, 6)
+stroke(statsFrame)
+
+local function mkStat(y)
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, -14, 0, 18)
+	l.Position = UDim2.fromOffset(8, y)
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.GothamMedium
+	l.TextSize = 13
+	l.TextColor3 = Theme.Text
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.Parent = statsFrame
+	return l
+end
+local lblLevel  = mkStat(6)
+local lblRank   = mkStat(26)
+local lblWins   = mkStat(46)
+local lblStreak = mkStat(66)
+local lblElo    = mkStat(86)
+
+local function refreshStats()
+	lblLevel.Text  = "LVL   " .. tostring(settings.Level)
+	lblRank.Text   = "RANK  " .. tostring(settings.Rank)
+	lblWins.Text   = "WINS  " .. tostring(settings.Wins)
+	lblStreak.Text = "STREAK  " .. tostring(settings.Streak)
+	lblElo.Text    = "ELO   " .. tostring(settings.Elo)
+	statsFrame.Visible = settings.ShowStatsHUD
+end
+refreshStats()
+
+-- ── Main GUI ──
+local gui = Instance.new("ScreenGui")
+gui.Name = "YabujinVisuals"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = playerGui
+
+-- Crosshair
+local cross = Instance.new("Frame")
+cross.Name = "Crosshair"
+cross.AnchorPoint = Vector2.new(0.5, 0.5)
+cross.Position = UDim2.fromScale(0.5, 0.5)
+cross.Size = UDim2.fromOffset(50, 50)
+cross.BackgroundTransparency = 1
+cross.Parent = gui
+
+local function rebuildCrosshair()
+	for _, c in ipairs(cross:GetChildren()) do c:Destroy() end
+	if not settings.CrosshairVisible then return end
+	local size, gap, thick = settings.CrosshairSize, settings.CrosshairGap, settings.CrosshairThickness
+	local function arm(pos, sz)
+		local f = Instance.new("Frame")
+		f.AnchorPoint = Vector2.new(0.5, 0.5)
+		f.Position = pos
+		f.Size = sz
+		f.BackgroundColor3 = Color3.fromRGB(230, 230, 240)
+		f.BorderSizePixel = 0
+		f.Parent = cross
+		corner(f, 1)
 	end
+	arm(UDim2.fromOffset(0, -(gap + size/2)), UDim2.fromOffset(thick, size))
+	arm(UDim2.fromOffset(0, gap + size/2), UDim2.fromOffset(thick, size))
+	arm(UDim2.fromOffset(-(gap + size/2), 0), UDim2.fromOffset(size, thick))
+	arm(UDim2.fromOffset(gap + size/2, 0), UDim2.fromOffset(size, thick))
+end
+rebuildCrosshair()
+
+-- FPS
+local fpsLabel = Instance.new("TextLabel")
+fpsLabel.Size = UDim2.fromOffset(80, 16)
+fpsLabel.Position = UDim2.new(1, -90, 0, 8)
+fpsLabel.BackgroundTransparency = 1
+fpsLabel.Font = Enum.Font.GothamMedium
+fpsLabel.TextSize = 12
+fpsLabel.TextColor3 = Theme.Dim
+fpsLabel.TextXAlignment = Enum.TextXAlignment.Right
+fpsLabel.Text = ""
+fpsLabel.Parent = gui
+
+-- Panel
+local panel = Instance.new("Frame")
+panel.Name = "Panel"
+panel.AnchorPoint = Vector2.new(1, 0.5)
+panel.Position = UDim2.new(1, -16, 0.5, 0) -- start OPEN
+panel.Size = UDim2.fromOffset(390, 500)
+panel.BackgroundColor3 = Theme.Panel
+panel.BorderSizePixel = 0
+panel.Parent = gui
+corner(panel, 8)
+stroke(panel)
+
+local open = true
+local function setOpen(v)
+	open = v
+	local target = v and UDim2.new(1, -16, 0.5, 0) or UDim2.new(1, 24, 0.5, 0)
+	TweenService:Create(panel, TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+		Position = target
+	}):Play()
 end
 
-function UI:_AddToggle(key, label)
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 32)
-	row.BackgroundColor3 = Theme.Background
-	row.BorderSizePixel = 0
-	row.Parent = self.Content
-	corner(row)
-	pad(row, 0, 0, 10, 8)
+-- Header
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 40)
+header.BackgroundColor3 = Theme.Bg
+header.BorderSizePixel = 0
+header.Parent = panel
+corner(header, 8)
 
-	local text = Instance.new("TextLabel")
-	text.Size = UDim2.new(1, -50, 1, 0)
-	text.BackgroundTransparency = 1
-	text.Font = Theme.Font
-	text.TextSize = 13
-	text.TextColor3 = Theme.Text
-	text.TextXAlignment = Enum.TextXAlignment.Left
-	text.Text = label
-	text.Parent = row
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -40, 1, 0)
+title.Position = UDim2.fromOffset(14, 0)
+title.BackgroundTransparency = 1
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.TextColor3 = Theme.Text
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Text = "YABUJIN  ·  VISUALS"
+title.Parent = header
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.fromOffset(28, 28)
+closeBtn.Position = UDim2.new(1, -34, 0.5, -14)
+closeBtn.BackgroundColor3 = Theme.Bg
+closeBtn.Text = "×"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 18
+closeBtn.TextColor3 = Theme.Dim
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = header
+corner(closeBtn, 4)
+closeBtn.MouseButton1Click:Connect(function() setOpen(false) end)
+
+-- Scroll
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, 0, 1, -48)
+scroll.Position = UDim2.fromOffset(0, 44)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 3
+scroll.ScrollBarImageColor3 = Theme.AccentSoft
+scroll.CanvasSize = UDim2.fromOffset(0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.Parent = panel
+
+local pad = Instance.new("UIPadding")
+pad.PaddingTop = UDim.new(0, 6)
+pad.PaddingBottom = UDim.new(0, 14)
+pad.PaddingLeft = UDim.new(0, 12)
+pad.PaddingRight = UDim.new(0, 12)
+pad.Parent = scroll
+
+local list = Instance.new("UIListLayout")
+list.Padding = UDim.new(0, 7)
+list.SortOrder = Enum.SortOrder.LayoutOrder
+list.Parent = scroll
+
+-- UI builders
+local function addSection(name)
+	local f = Instance.new("Frame")
+	f.Size = UDim2.new(1, 0, 0, 20)
+	f.BackgroundTransparency = 1
+	f.Parent = scroll
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, 0, 1, 0)
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.GothamBold
+	l.TextSize = 11
+	l.TextColor3 = Theme.Accent
+	l.TextXAlignment = Enum.TextXAlignment.Left
+	l.Text = name
+	l.Parent = f
+end
+
+local function addToggle(key, label, onChanged)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 30)
+	row.BackgroundColor3 = Theme.Bg
+	row.BorderSizePixel = 0
+	row.Parent = scroll
+	corner(row)
+
+	local t = Instance.new("TextLabel")
+	t.Size = UDim2.new(1, -50, 1, 0)
+	t.Position = UDim2.fromOffset(10, 0)
+	t.BackgroundTransparency = 1
+	t.Font = Enum.Font.GothamMedium
+	t.TextSize = 13
+	t.TextColor3 = Theme.Text
+	t.TextXAlignment = Enum.TextXAlignment.Left
+	t.Text = label
+	t.Parent = row
 
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2.fromOffset(40, 20)
-	btn.Position = UDim2.new(1, -44, 0.5, -10)
-	btn.BackgroundColor3 = Theme.SliderTrack
+	btn.Position = UDim2.new(1, -46, 0.5, -10)
+	btn.BackgroundColor3 = Theme.Track
 	btn.Text = ""
 	btn.BorderSizePixel = 0
 	btn.Parent = row
-	corner(btn, UDim.new(1, 0))
+	corner(btn, 10)
 
 	local knob = Instance.new("Frame")
 	knob.Size = UDim2.fromOffset(16, 16)
 	knob.Position = UDim2.fromOffset(2, 2)
-	knob.BackgroundColor3 = Theme.TextDim
+	knob.BackgroundColor3 = Theme.Dim
 	knob.BorderSizePixel = 0
 	knob.Parent = btn
-	corner(knob, UDim.new(1, 0))
+	corner(knob, 8)
 
 	local function refresh()
-		local on = self.Settings:Get(key) == true
-		btn.BackgroundColor3 = on and Theme.AccentSoft or Theme.SliderTrack
+		local on = settings[key] == true
+		btn.BackgroundColor3 = on and Theme.AccentSoft or Theme.Track
 		knob.Position = on and UDim2.new(1, -18, 0, 2) or UDim2.fromOffset(2, 2)
-		knob.BackgroundColor3 = on and Theme.Text or Theme.TextDim
+		knob.BackgroundColor3 = on and Theme.Text or Theme.Dim
 	end
 	refresh()
 
 	btn.MouseButton1Click:Connect(function()
-		local new = not self.Settings:Get(key)
-		self.Settings:Set(key, new)
+		settings[key] = not settings[key]
 		refresh()
-		if self.OnChange then self.OnChange(key, new) end
+		if onChanged then onChanged(settings[key]) end
 	end)
-	self.Rows[key] = refresh
 end
 
-function UI:_AddSlider(key, label, min, max, step)
+local function addSlider(key, label, min, max, step, onChanged)
 	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 48)
-	row.BackgroundColor3 = Theme.Background
+	row.Size = UDim2.new(1, 0, 0, 46)
+	row.BackgroundColor3 = Theme.Bg
 	row.BorderSizePixel = 0
-	row.Parent = self.Content
+	row.Parent = scroll
 	corner(row)
-	pad(row, 6, 6, 10, 10)
 
-	local text = Instance.new("TextLabel")
-	text.Size = UDim2.new(0.55, 0, 0, 16)
-	text.BackgroundTransparency = 1
-	text.Font = Theme.Font
-	text.TextSize = 13
-	text.TextColor3 = Theme.Text
-	text.TextXAlignment = Enum.TextXAlignment.Left
-	text.Text = label
-	text.Parent = row
+	local t = Instance.new("TextLabel")
+	t.Size = UDim2.new(0.55, 0, 0, 16)
+	t.Position = UDim2.fromOffset(10, 6)
+	t.BackgroundTransparency = 1
+	t.Font = Enum.Font.GothamMedium
+	t.TextSize = 13
+	t.TextColor3 = Theme.Text
+	t.TextXAlignment = Enum.TextXAlignment.Left
+	t.Text = label
+	t.Parent = row
 
-	local valueLbl = Instance.new("TextLabel")
-	valueLbl.Size = UDim2.new(0.45, 0, 0, 16)
-	valueLbl.Position = UDim2.new(0.55, 0, 0, 0)
-	valueLbl.BackgroundTransparency = 1
-	valueLbl.Font = Theme.Font
-	valueLbl.TextSize = 12
-	valueLbl.TextColor3 = Theme.TextDim
-	valueLbl.TextXAlignment = Enum.TextXAlignment.Right
-	valueLbl.Parent = row
+	local val = Instance.new("TextLabel")
+	val.Size = UDim2.new(0.4, 0, 0, 16)
+	val.Position = UDim2.new(0.55, 0, 0, 6)
+	val.BackgroundTransparency = 1
+	val.Font = Enum.Font.GothamMedium
+	val.TextSize = 12
+	val.TextColor3 = Theme.Dim
+	val.TextXAlignment = Enum.TextXAlignment.Right
+	val.Parent = row
 
 	local track = Instance.new("Frame")
-	track.Size = UDim2.new(1, 0, 0, 6)
-	track.Position = UDim2.fromOffset(0, 28)
-	track.BackgroundColor3 = Theme.SliderTrack
+	track.Size = UDim2.new(1, -20, 0, 6)
+	track.Position = UDim2.fromOffset(10, 30)
+	track.BackgroundColor3 = Theme.Track
 	track.BorderSizePixel = 0
 	track.Parent = row
-	corner(track, UDim.new(1, 0))
+	corner(track, 3)
 
 	local fill = Instance.new("Frame")
 	fill.Size = UDim2.fromScale(0.5, 1)
-	fill.BackgroundColor3 = Theme.SliderFill
+	fill.BackgroundColor3 = Theme.Accent
 	fill.BorderSizePixel = 0
 	fill.Parent = track
-	corner(fill, UDim.new(1, 0))
+	corner(fill, 3)
 
 	local dragging = false
-
-	local function setFromAlpha(alpha)
+	local function apply(alpha)
 		alpha = math.clamp(alpha, 0, 1)
 		local raw = min + (max - min) * alpha
-		local value = math.floor(raw / step + 0.5) * step
-		value = math.clamp(value, min, max)
-		if step >= 1 then value = math.floor(value + 0.5) end
-		self.Settings:Set(key, value)
-		fill.Size = UDim2.fromScale((value - min) / (max - min), 1)
-		valueLbl.Text = tostring(value)
-		if self.OnChange then self.OnChange(key, value) end
+		local v = math.floor(raw / step + 0.5) * step
+		v = math.clamp(v, min, max)
+		if step >= 1 then v = math.floor(v + 0.5) end
+		settings[key] = v
+		fill.Size = UDim2.fromScale((v - min) / (max - min), 1)
+		val.Text = tostring(v)
+		if onChanged then onChanged(v) end
 	end
-
-	local function refresh()
-		local value = self.Settings:Get(key) or min
-		local alpha = (value - min) / (max - min)
-		fill.Size = UDim2.fromScale(math.clamp(alpha, 0, 1), 1)
-		valueLbl.Text = tostring(value)
-	end
-	refresh()
+	apply((settings[key] - min) / (max - min))
 
 	track.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			local rel = (input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X
-			setFromAlpha(rel)
+			apply((input.Position.X - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1))
 		end
 	end)
 	UserInputService.InputChanged:Connect(function(input)
 		if not dragging then return end
 		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			local rel = (input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X
-			setFromAlpha(rel)
+			apply((input.Position.X - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1))
 		end
 	end)
 	UserInputService.InputEnded:Connect(function(input)
@@ -659,282 +399,178 @@ function UI:_AddSlider(key, label, min, max, step)
 			dragging = false
 		end
 	end)
-	self.Rows[key] = refresh
 end
 
-function UI:_AddDropdown(key, label, options)
+local function addDropdown(key, label, options, onChanged)
 	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 36)
-	row.BackgroundColor3 = Theme.Background
+	row.Size = UDim2.new(1, 0, 0, 34)
+	row.BackgroundColor3 = Theme.Bg
 	row.BorderSizePixel = 0
-	row.Parent = self.Content
+	row.Parent = scroll
 	corner(row)
-	pad(row, 0, 0, 10, 8)
 
-	local text = Instance.new("TextLabel")
-	text.Size = UDim2.new(0.4, 0, 1, 0)
-	text.BackgroundTransparency = 1
-	text.Font = Theme.Font
-	text.TextSize = 13
-	text.TextColor3 = Theme.Text
-	text.TextXAlignment = Enum.TextXAlignment.Left
-	text.Text = label
-	text.Parent = row
+	local t = Instance.new("TextLabel")
+	t.Size = UDim2.new(0.38, 0, 1, 0)
+	t.Position = UDim2.fromOffset(10, 0)
+	t.BackgroundTransparency = 1
+	t.Font = Enum.Font.GothamMedium
+	t.TextSize = 13
+	t.TextColor3 = Theme.Text
+	t.TextXAlignment = Enum.TextXAlignment.Left
+	t.Text = label
+	t.Parent = row
 
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2.new(0.55, 0, 0, 24)
 	btn.Position = UDim2.new(0.42, 0, 0.5, -12)
-	btn.BackgroundColor3 = Theme.SliderTrack
-	btn.Font = Theme.Font
+	btn.BackgroundColor3 = Theme.Track
+	btn.Font = Enum.Font.GothamMedium
 	btn.TextSize = 12
 	btn.TextColor3 = Theme.Text
-	btn.Text = tostring(self.Settings:Get(key) or options[1])
+	btn.Text = tostring(settings[key] or options[1])
 	btn.BorderSizePixel = 0
 	btn.Parent = row
-	corner(btn, UDim.new(0, 4))
+	corner(btn, 4)
 
 	local idx = 1
-	for i, opt in ipairs(options) do
-		if opt == self.Settings:Get(key) then idx = i break end
+	for i, o in ipairs(options) do
+		if o == settings[key] then idx = i break end
 	end
-
 	btn.MouseButton1Click:Connect(function()
 		idx = (idx % #options) + 1
-		local val = options[idx]
-		self.Settings:Set(key, val)
-		btn.Text = tostring(val)
-		if self.OnChange then self.OnChange(key, val) end
+		settings[key] = options[idx]
+		btn.Text = tostring(options[idx])
+		if onChanged then onChanged(options[idx]) end
 	end)
-
-	self.Rows[key] = function()
-		btn.Text = tostring(self.Settings:Get(key) or options[1])
-	end
 end
 
-function UI:_AddButton(label, callback)
+local function addButton(label, color, callback)
 	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, 0, 0, 34)
-	btn.BackgroundColor3 = Theme.Background
-	btn.Font = Theme.Font
+	btn.Size = UDim2.new(1, 0, 0, 32)
+	btn.BackgroundColor3 = Theme.Bg
+	btn.Font = Enum.Font.GothamMedium
 	btn.TextSize = 13
-	btn.TextColor3 = Theme.Accent
+	btn.TextColor3 = color or Theme.Accent
 	btn.Text = label
 	btn.BorderSizePixel = 0
-	btn.Parent = self.Content
+	btn.Parent = scroll
 	corner(btn)
-	stroke(btn, Theme.Stroke, 1)
+	stroke(btn)
 	btn.MouseButton1Click:Connect(callback)
 end
 
-function UI:_RebuildCrosshair()
-	local cross = self.Crosshair
-	for _, c in ipairs(cross:GetChildren()) do c:Destroy() end
-	if not self.Settings:Get("CrosshairVisible") then return end
-
-	local size = self.Settings:Get("CrosshairSize") or 6
-	local gap = self.Settings:Get("CrosshairGap") or 4
-	local thick = self.Settings:Get("CrosshairThickness") or 2
-	local color = self.Settings:Get("CrosshairColor") or Theme.Text
-
-	local function arm(pos, sz)
-		local f = Instance.new("Frame")
-		f.AnchorPoint = Vector2.new(0.5, 0.5)
-		f.Position = pos
-		f.Size = sz
-		f.BackgroundColor3 = color
-		f.BorderSizePixel = 0
-		f.Parent = cross
-		corner(f, UDim.new(0, 1))
-	end
-	arm(UDim2.fromOffset(0, -(gap + size / 2)), UDim2.fromOffset(thick, size))
-	arm(UDim2.fromOffset(0, gap + size / 2), UDim2.fromOffset(thick, size))
-	arm(UDim2.fromOffset(-(gap + size / 2), 0), UDim2.fromOffset(size, thick))
-	arm(UDim2.fromOffset(gap + size / 2, 0), UDim2.fromOffset(size, thick))
-end
-
-function UI:RefreshAll()
-	for _, fn in pairs(self.Rows) do fn() end
-	self:_RebuildCrosshair()
-	if self.StatsDisplay then self.StatsDisplay:Refresh() end
-end
-
-function UI:SetOpen(open)
-	self.Open = open
-	local target = open and UDim2.new(1, -16, 0.5, 0) or UDim2.new(1, 20, 0.5, 0)
-	TweenService:Create(self.Panel, TweenInfo.new(Config.OpenSpeed, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-		Position = target,
-	}):Play()
-end
-
-function UI:Toggle()
-	self:SetOpen(not self.Open)
-end
-
-return UI
-]=]
-
-SOURCES["Apply"] = [=[
-local Lighting = game:GetService("Lighting")
-local Players = game:GetService("Players")
-
-local Apply = {}
-
-function Apply.FOV(value)
+-- ── Apply helpers ──
+local function applyFOV(v)
 	local cam = workspace.CurrentCamera
-	if cam then cam.FieldOfView = value end
+	if cam then cam.FieldOfView = v end
 end
-
-function Apply.Bloom(enabled)
-	local bloom = Lighting:FindFirstChild("YabujinBloom")
-	if enabled then
-		if not bloom then
-			bloom = Instance.new("BloomEffect")
-			bloom.Name = "YabujinBloom"
-			bloom.Intensity = 0.6
-			bloom.Size = 24
-			bloom.Threshold = 1.2
-			bloom.Parent = Lighting
+local function applyBloom(on)
+	local b = Lighting:FindFirstChild("YabujinBloom")
+	if on then
+		if not b then
+			b = Instance.new("BloomEffect")
+			b.Name = "YabujinBloom"
+			b.Intensity = 0.55
+			b.Size = 22
+			b.Threshold = 1.1
+			b.Parent = Lighting
 		end
-		bloom.Enabled = true
-	elseif bloom then
-		bloom.Enabled = false
-	end
+		b.Enabled = true
+	elseif b then b.Enabled = false end
 end
-
-function Apply.Vignette(enabled)
-	local cc = Lighting:FindFirstChild("YabujinVignette")
-	if enabled then
-		if not cc then
-			cc = Instance.new("ColorCorrectionEffect")
-			cc.Name = "YabujinVignette"
-			cc.Brightness = -0.04
-			cc.Contrast = 0.08
-			cc.Saturation = -0.05
-			cc.Parent = Lighting
+local function applyVignette(on)
+	local c = Lighting:FindFirstChild("YabujinVignette")
+	if on then
+		if not c then
+			c = Instance.new("ColorCorrectionEffect")
+			c.Name = "YabujinVignette"
+			c.Brightness = -0.04
+			c.Contrast = 0.08
+			c.Saturation = -0.04
+			c.Parent = Lighting
 		end
-		cc.Enabled = true
-	elseif cc then
-		cc.Enabled = false
-	end
+		c.Enabled = true
+	elseif c then c.Enabled = false end
 end
-
-function Apply.UIScale(value)
-	local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-	if not pg then return end
-	local gui = pg:FindFirstChild("YabujinVisuals")
-	if gui then
-		local scale = gui:FindFirstChildOfClass("UIScale")
-		if not scale then
-			scale = Instance.new("UIScale")
-			scale.Parent = gui
+local function applySkin()
+	local color = SKIN_COLORS[settings.SelectedSkin] or SKIN_COLORS.Default
+	local char = player.Character
+	if char then
+		for _, inst in ipairs(char:GetDescendants()) do
+			if inst:IsA("BasePart") and (inst.Name:lower():find("handle") or inst.Parent:IsA("Tool")) then
+				inst.Color = color
+			end
 		end
-		scale.Scale = value
 	end
-end
-
-function Apply.All(settings)
-	Apply.FOV(settings:Get("FOV"))
-	Apply.Bloom(settings:Get("Bloom"))
-	Apply.Vignette(settings:Get("Vignette"))
-	Apply.UIScale(settings:Get("UIScale"))
-end
-
-return Apply
-]=]
-
-SOURCES["__CLIENT__"] = [=[
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-
-local player = Players.LocalPlayer
-while not player do task.wait() player = Players.LocalPlayer end
-
-local Config = require("Config")
-local SettingsStore = require("SettingsStore")
-local SkinChanger = require("SkinChanger")
-local StatsDisplay = require("StatsDisplay")
-local UI = require("UI")
-local Apply = require("Apply")
-
-local settings = SettingsStore.new()
-local skinChanger = SkinChanger.new(settings)
-local statsDisplay = StatsDisplay.new(settings)
-
-local function onChange(key, value)
-	if key == "FOV" then Apply.FOV(value)
-	elseif key == "Bloom" then Apply.Bloom(value)
-	elseif key == "Vignette" then Apply.Vignette(value)
-	elseif key == "UIScale" then Apply.UIScale(value)
-	elseif key == "CrosshairVisible" or key == "CrosshairSize" or key == "CrosshairGap" or key == "CrosshairThickness" then
-		ui:_RebuildCrosshair()
-	elseif key == "ShowFPS" then
-		ui.FPSLabel.Visible = value == true
-	elseif key == "ShowStatsHUD" or key == "Level" or key == "Rank" or key == "Wins" or key == "Streak" or key == "Elo" then
-		statsDisplay:Refresh()
-	elseif key == "Reset" then
-		Apply.All(settings)
-		ui:_RebuildCrosshair()
-		ui.FPSLabel.Visible = settings:Get("ShowFPS")
-		statsDisplay:Refresh()
+	local cam = workspace.CurrentCamera
+	if cam then
+		for _, inst in ipairs(cam:GetDescendants()) do
+			if inst:IsA("BasePart") then inst.Color = color end
+		end
 	end
+	print("[Yabujin] Skin applied:", settings.SelectedSkin, "→", settings.SelectedWeapon)
 end
 
-local ui = UI.new(settings, onChange, skinChanger, statsDisplay)
-Apply.All(settings)
-ui.FPSLabel.Visible = settings:Get("ShowFPS")
-statsDisplay:Refresh()
+-- ── Build sections ──
+addSection("CAMERA")
+addSlider("FOV", "FOV", 50, 120, 1, applyFOV)
+addToggle("CameraShake", "Camera Shake")
 
-UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	if input.KeyCode == Config.ToggleKey then
-		ui:Toggle()
+addSection("CROSSHAIR")
+addToggle("CrosshairVisible", "Visible", function() rebuildCrosshair() end)
+addSlider("CrosshairSize", "Size", 2, 24, 1, function() rebuildCrosshair() end)
+addSlider("CrosshairGap", "Gap", 0, 20, 1, function() rebuildCrosshair() end)
+addSlider("CrosshairThickness", "Thickness", 1, 6, 1, function() rebuildCrosshair() end)
+
+addSection("POST FX")
+addToggle("Bloom", "Bloom", applyBloom)
+addToggle("Vignette", "Vignette", applyVignette)
+
+addSection("SKIN CHANGER")
+addDropdown("SelectedWeapon", "Weapon", WEAPONS)
+addDropdown("SelectedSkin", "Skin", SKINS)
+addButton("Apply Skin", Theme.Accent, applySkin)
+
+addSection("STATS DISPLAY")
+addToggle("ShowStatsHUD", "Show Stats HUD", function(v) statsFrame.Visible = v end)
+addSlider("Level", "Level", 1, 999, 1, refreshStats)
+addDropdown("Rank", "Rank", RANKS, refreshStats)
+addSlider("Wins", "Wins", 0, 9999, 1, refreshStats)
+addSlider("Streak", "Streak", 0, 999, 1, refreshStats)
+addSlider("Elo", "Elo", 0, 5000, 10, refreshStats)
+
+addSection("INTERFACE")
+addToggle("ShowFPS", "Show FPS", function(v) fpsLabel.Visible = v end)
+
+addButton("Close Panel", Theme.Dim, function() setOpen(false) end)
+
+-- Apply defaults
+applyFOV(settings.FOV)
+applyBloom(settings.Bloom)
+applyVignette(settings.Vignette)
+fpsLabel.Visible = settings.ShowFPS
+
+-- Toggle key (RightShift) + also Insert as backup
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if input.KeyCode == Enum.KeyCode.RightShift or input.KeyCode == Enum.KeyCode.Insert then
+		setOpen(not open)
 	end
 end)
 
+-- FPS counter
 local frames, last = 0, os.clock()
 RunService.RenderStepped:Connect(function()
 	frames += 1
 	local now = os.clock()
 	if now - last >= 1 then
-		if ui and ui.FPSLabel and settings:Get("ShowFPS") then
-			ui.FPSLabel.Text = string.format("%d FPS", frames)
+		if settings.ShowFPS then
+			fpsLabel.Text = frames .. " FPS"
 		end
 		frames = 0
 		last = now
 	end
 end)
 
-print("[Yabujin] Ready · Right Shift to toggle")
-print("[Yabujin] Skin Changer + Stats Display loaded")
-]=]
-
--- ── require system ──
-local cache, loading = {}, {}
-
-local function yabRequire(name)
-	if cache[name] ~= nil then return cache[name] end
-	if loading[name] then error("[Yabujin] Circular: " .. name) end
-	local src = SOURCES[name]
-	if not src then error("[Yabujin] Missing: " .. tostring(name)) end
-	loading[name] = true
-	local wrapped = "local require = ...\n" .. src
-	local chunk, err = loadstring(wrapped, "=Yabujin/" .. name)
-	if not chunk then loading[name] = nil error("[Yabujin] " .. name .. " compile: " .. tostring(err)) end
-	local ok, result = pcall(chunk, yabRequire)
-	loading[name] = nil
-	if not ok then error("[Yabujin] " .. name .. " runtime: " .. tostring(result)) end
-	cache[name] = result
-	return result
-end
-
-_G.YabujinRequire = yabRequire
-
-for _, name in ipairs({ "Config", "Theme", "SettingsStore", "SkinChanger", "StatsDisplay", "UI", "Apply" }) do
-	local ok, err = pcall(yabRequire, name)
-	if ok then print("[Yabujin] Loaded", name) else warn("[Yabujin] Failed", name, err) end
-end
-
-local clientSrc = SOURCES["__CLIENT__"]
-local clientChunk = assert(loadstring("local require = ...\n" .. clientSrc, "=Yabujin/Client"))
-clientChunk(yabRequire)
+print("[Yabujin] Loaded successfully")
+print("[Yabujin] Panel is OPEN · RightShift or Insert to toggle")
+print("[Yabujin] Skin Changer + Stats HUD ready")
